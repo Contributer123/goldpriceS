@@ -1,66 +1,147 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Goldpreis 24K – LBMA PM (EUR)</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f9fafb;
+      color: #111;
+      margin: 2rem auto;
+      max-width: 800px;
+    }
+    h1 { color: #d4af37; }
+    label { font-weight: bold; display: inline-block; margin-top: 1rem; }
+    input { margin-left: 0.5rem; padding: 0.3rem; }
+    canvas { margin-top: 2rem; }
+    #lastPrice {
+      font-size: 1.2rem;
+      font-weight: bold;
+      margin-top: 1rem;
+      color: #1a1a1a;
+    }
+  </style>
+</head>
+<body>
+  <h1>Goldpreis – LBMA PM (EUR/g)</h1>
+  <p>
+    Quelle: <a href="https://prices.lbma.org.uk/json/gold_pm.json" target="_blank">LBMA JSON Feed</a><br>
+    (mit CORS-Proxy von <a href="https://api.codetabs.com/" target="_blank">codetabs.com</a>)
+  </p>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
-<script>
-  const FIXED_EUR_RATE = 0.92; // 1 USD = 0.92 EUR (fix)
-  const OUNCE_TO_GRAM = 31.1035;
+  <label for="gramInput">
+    Grammmenge:
+    <input type="number" id="gramInput" value="300" min="0.1" step="0.1">
+  </label>
 
-  async function loadLBMAData() {
-    const response = await fetch('https://api.codetabs.com/v1/proxy/?quest=https://prices.lbma.org.uk/json/gold_pm.json');
-    const json = await response.json();
+  <p>
+    <small>Fixer EUR/USD-Wechselkurs: <span id="eurRateDisplay">0.85</span></small>
+  </p>
 
-    const records = json.filter(e => e.v && e.v[0] > 0);
-    const dates = records.map(e => e.d);
-    const usdPerOunce = records.map(e => e.v[0]);
-    const eurPerGram = usdPerOunce.map(v => (v / OUNCE_TO_GRAM) * FIXED_EUR_RATE);
+  <div id="lastPrice">Letzter Preis: –</div>
 
-    const gramsInput = document.getElementById('gramInput');
-    const ctx = document.getElementById('chart').getContext('2d');
+  <canvas id="chart" width="700" height="400"></canvas>
 
-    const chart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: dates,
-        datasets: [{
-          label: `Preis für ${gramsInput.value}g (EUR)`,
-          data: eurPerGram.map(v => v * gramsInput.value),
-          borderColor: '#d4af37',
-          borderWidth: 2,
-          pointRadius: 3,
-          fill: false
-        }]
-      },
-      options: {
-        plugins: {
-          datalabels: {
-            align: 'top',
-            color: '#444',
-            font: { weight: 'bold', size: 10 },
-            formatter: (value) => value.toFixed(2) // shows 2 decimals
-          },
-          tooltip: { enabled: true },
-          legend: { display: true }
+  <script>
+    const FIXED_EUR_RATE = 0.85;     // 1 USD = 0.85 EUR
+    const OUNCE_TO_GRAM = 31.1035;   // troy ounce → grams
+    const YEARS_TO_SHOW = 0.5;         // show last 2 years only
+
+    async function loadLBMAData() {
+      const proxyURL = 'https://api.codetabs.com/v1/proxy/?quest=https://prices.lbma.org.uk/json/gold_pm.json';
+      const response = await fetch(proxyURL);
+      const json = await response.json();
+
+      // filter valid entries
+      let records = json.filter(e => e.v && e.v[0] > 0);
+
+      // map to objects with real Date
+      records = records.map(e => ({
+        date: new Date(e.d),
+        usd: e.v[0]
+      }));
+
+      // keep only last 2 years
+      const cutoff = new Date();
+      cutoff.setFullYear(cutoff.getFullYear() - YEARS_TO_SHOW);
+      records = records.filter(e => e.date >= cutoff);
+
+      // prepare arrays
+      const dates = records.map(e => e.date.toISOString().split('T')[0]);
+      const usdPerOunce = records.map(e => e.usd);
+      const eurPerGram = usdPerOunce.map(v => (v / OUNCE_TO_GRAM) * FIXED_EUR_RATE);
+
+      const gramsInput = document.getElementById('gramInput');
+      const lastPriceDiv = document.getElementById('lastPrice');
+      const ctx = document.getElementById('chart').getContext('2d');
+
+      // Calculate and display latest price
+      function updateLastPrice() {
+        const g = parseFloat(gramsInput.value);
+        const latestPrice = eurPerGram[eurPerGram.length - 1] * g;
+        lastPriceDiv.textContent = `Letzter Preis: € ${latestPrice.toFixed(2)}`;
+      }
+
+      // initial display
+      updateLastPrice();
+
+      const chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: dates,
+          datasets: [{
+            label: `Preis für ${gramsInput.value}g (EUR)`,
+            data: eurPerGram.map(v => v * gramsInput.value),
+            borderColor: '#d4af37',
+            borderWidth: 2,
+            pointRadius: 0,
+            fill: false
+          }]
         },
-        responsive: true,
-        interaction: { mode: 'index', intersect: false },
-        scales: {
-          x: { title: { display: true, text: 'Datum' }, ticks: { maxTicksLimit: 10 } },
-          y: { title: { display: true, text: 'EUR' } }
-        }
-      },
-      plugins: [ChartDataLabels] // enable labels plugin
-    });
+        options: {
+          plugins: {
+            datalabels: {
+              align: 'top',
+              color: '#555',
+              font: { weight: 'bold', size: 9 },
+              formatter: (value, ctx) => {
+                // only label every 20th point to reduce clutter
+                return ctx.dataIndex % 20 === 0 ? value.toFixed(2) : '';
+              }
+            },
+            tooltip: { enabled: true },
+            legend: { display: true }
+          },
+          responsive: true,
+          interaction: { mode: 'index', intersect: false },
+          scales: {
+            x: { title: { display: true, text: 'Datum' }, ticks: { maxTicksLimit: 12 } },
+            y: { title: { display: true, text: 'EUR' } }
+          }
+        },
+        plugins: [ChartDataLabels]
+      });
 
-    gramsInput.addEventListener('input', () => {
-      const g = gramsInput.value;
-      chart.data.datasets[0].label = `Preis für ${g}g (EUR)`;
-      chart.data.datasets[0].data = eurPerGram.map(v => v * g);
-      chart.update();
-    });
-  }
+      gramsInput.addEventListener('input', () => {
+        const g = parseFloat(gramsInput.value);
+        chart.data.datasets[0].label = `Preis für ${g}g (EUR)`;
+        chart.data.datasets[0].data = eurPerGram.map(v => v * g);
+        chart.update();
+        updateLastPrice();
+      });
+    }
 
-  loadLBMAData().catch(err => {
-    console.error('Fehler beim Laden der LBMA-Daten:', err);
-    alert('Fehler beim Laden der LBMA-Daten. Bitte Seite neu laden.');
-  });
-</script>
+    // Run after DOM loaded
+    document.addEventListener('DOMContentLoaded', () => {
+      loadLBMAData().catch(err => {
+        console.error('Fehler beim Laden der LBMA-Daten:', err);
+        alert('Fehler beim Laden der LBMA-Daten. Bitte Seite neu laden.');
+      });
+    });
+  </script>
+</body>
+</html>
