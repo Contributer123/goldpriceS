@@ -1,33 +1,17 @@
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
 <script>
-  const FIXED_EUR_RATE = 0.92; // 1 USD = 0.92 EUR (fixed rate)
+  const FIXED_EUR_RATE = 0.92; // 1 USD = 0.92 EUR (fix)
   const OUNCE_TO_GRAM = 31.1035;
-  const YEARS_TO_SHOW = 2; // <-- Adjust here (2 years)
 
   async function loadLBMAData() {
-    const response = await fetch('https://prices.lbma.org.uk/json/gold_pm.json');
+    const response = await fetch('https://api.codetabs.com/v1/proxy/?quest=https://prices.lbma.org.uk/json/gold_pm.json');
     const json = await response.json();
 
-    // Filter out invalid records
-    let records = json.filter(e => e.v && e.v[0] > 0);
-
-    // Convert date strings to actual Date objects
-    records = records.map(e => ({
-      date: new Date(e.d),
-      usd: e.v[0]
-    }));
-
-    // Calculate cutoff date (2 years ago from today)
-    const cutoff = new Date();
-    cutoff.setFullYear(cutoff.getFullYear() - YEARS_TO_SHOW);
-
-    // Keep only last 2 years
-    records = records.filter(e => e.date >= cutoff);
-
-    // Prepare arrays
-    const dates = records.map(e => e.date.toISOString().split('T')[0]);
-    const usdPerOunce = records.map(e => e.usd);
+    const records = json.filter(e => e.v && e.v[0] > 0);
+    const dates = records.map(e => e.d);
+    const usdPerOunce = records.map(e => e.v[0]);
     const eurPerGram = usdPerOunce.map(v => (v / OUNCE_TO_GRAM) * FIXED_EUR_RATE);
 
     const gramsInput = document.getElementById('gramInput');
@@ -42,7 +26,7 @@
           data: eurPerGram.map(v => v * gramsInput.value),
           borderColor: '#d4af37',
           borderWidth: 2,
-          pointRadius: 0,
+          pointRadius: 3,
           fill: false
         }]
       },
@@ -50,12 +34,9 @@
         plugins: {
           datalabels: {
             align: 'top',
-            color: '#555',
+            color: '#444',
             font: { weight: 'bold', size: 10 },
-            formatter: (value, ctx) => {
-              // only label every 20th point to avoid clutter
-              return ctx.dataIndex % 20 === 0 ? value.toFixed(2) : '';
-            }
+            formatter: (value) => value.toFixed(2) // shows 2 decimals
           },
           tooltip: { enabled: true },
           legend: { display: true }
@@ -63,14 +44,13 @@
         responsive: true,
         interaction: { mode: 'index', intersect: false },
         scales: {
-          x: { title: { display: true, text: 'Datum' }, ticks: { maxTicksLimit: 12 } },
+          x: { title: { display: true, text: 'Datum' }, ticks: { maxTicksLimit: 10 } },
           y: { title: { display: true, text: 'EUR' } }
         }
       },
-      plugins: [ChartDataLabels]
+      plugins: [ChartDataLabels] // enable labels plugin
     });
 
-    // Update when user changes grams
     gramsInput.addEventListener('input', () => {
       const g = gramsInput.value;
       chart.data.datasets[0].label = `Preis für ${g}g (EUR)`;
@@ -80,7 +60,7 @@
   }
 
   loadLBMAData().catch(err => {
-    console.error('Error loading LBMA data:', err);
-    alert('Error loading LBMA data. Please refresh the page.');
+    console.error('Fehler beim Laden der LBMA-Daten:', err);
+    alert('Fehler beim Laden der LBMA-Daten. Bitte Seite neu laden.');
   });
 </script>
