@@ -1,164 +1,94 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gold Value Tracker</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Goldpreis 24K – LBMA PM (EUR)</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body {
       font-family: system-ui, sans-serif;
-      background: #f9f9f9;
-      color: #222;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 2rem;
-    }
-    h1 {
-      color: #c59d5f;
-    }
-    .input-box {
-      margin-bottom: 1rem;
-    }
-    input {
-      padding: 0.5rem;
-      font-size: 1rem;
-      width: 120px;
-    }
-    button {
-      padding: 0.6rem 1rem;
-      font-size: 1rem;
-      background-color: #c59d5f;
-      color: white;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-    }
-    button:hover {
-      background-color: #b38a4d;
-    }
-    canvas {
-      margin-top: 2rem;
+      background: #f9fafb;
+      color: #111;
+      margin: 2rem auto;
       max-width: 800px;
-      width: 100%;
-      background: white;
-      border-radius: 8px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.1);
     }
+    h1 { color: #d4af37; }
+    label { font-weight: bold; }
+    input { margin-left: 0.5rem; padding: 0.3rem; }
+    canvas { margin-top: 2rem; }
   </style>
 </head>
 <body>
-  <h1>Gold Value Tracker</h1>
-  <div class="input-box">
-    <label for="weight">Enter Gold Weight (grams): </label>
-    <input type="number" id="weight" value="10" min="0" step="0.1">
-    <button onclick="loadGoldData()">Show Graph</button>
-  </div>
-  <canvas id="goldChart"></canvas>
+  <h1>Goldpreis – LBMA PM (EUR/g)</h1>
+  <p>
+    Quelle: <a href="https://prices.lbma.org.uk/json/gold_pm.json" target="_blank">LBMA JSON Feed</a>
+  </p>
+
+  <label for="gramInput">
+    Grammmenge:
+    <input type="number" id="gramInput" value="10" min="0.1" step="0.1">
+  </label>
+
+  <p>
+    <small>Fixer EUR/USD-Wechselkurs: <span id="eurRateDisplay">0.92</span></small>
+  </p>
+
+  <canvas id="chart" width="700" height="400"></canvas>
 
   <script>
-    const ctx = document.getElementById('goldChart').getContext('2d');
-    let chart;
+    const FIXED_EUR_RATE = 0.92; // 1 USD = 0.92 EUR (fixer Wechselkurs)
+    const OUNCE_TO_GRAM = 31.1035;
 
-    async function loadGoldData() {
-      const grams = parseFloat(document.getElementById('weight').value);
-      if (!grams || grams <= 0) {
-        alert("Please enter a valid weight in grams.");
-        return;
-      }
+    async function loadLBMAData() {
+      const response = await fetch('https://prices.lbma.org.uk/json/gold_pm.json');
+      const json = await response.json();
 
-      // Get today's date and date from 2 years ago
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setFullYear(endDate.getFullYear() - 2);
+      // LBMA liefert Objekte mit { d: Datum, v: [USD, GBP, EUR] }
+      const records = json.filter(entry => entry.v && entry.v[0] > 0);
 
-      const start = startDate.toISOString().split('T')[0];
-      const end = endDate.toISOString().split('T')[0];
+      const dates = records.map(e => e.d);
+      const usdPerOunce = records.map(e => e.v[0]);
+      const eurPerGram = usdPerOunce.map(v => (v / OUNCE_TO_GRAM) * FIXED_EUR_RATE);
 
-      try {
-        const response = await fetch(`https://api.metals.live/v1/spot/gold`);
-        const data = await response.json();
+      const gramsInput = document.getElementById('gramInput');
+      const ctx = document.getElementById('chart').getContext('2d');
 
-        // Metals.live doesn't provide historical daily data easily,
-        // so we’ll simulate realistic data based on today's price.
-        const todayPrice = data[data.length - 1].gold; // USD per ounce
-        const prices = [];
-        const labels = [];
-        let price = todayPrice;
-
-        for (let i = 0; i < 24; i++) { // 24 months (2 years)
-          const date = new Date(startDate);
-          date.setMonth(startDate.getMonth() + i);
-          labels.push(date.toISOString().split('T')[0]);
-          // simulate random monthly variation
-          price *= 1 + (Math.random() - 0.5) * 0.05;
-          prices.push(price);
-        }
-
-        // Convert USD/oz to USD/gram (1 oz = 31.1035 g)
-        const usdPerGram = prices.map(p => p / 31.1035);
-        const totalValue = usdPerGram.map(p => p * grams);
-
-        renderChart(labels, totalValue);
-      } catch (err) {
-        console.error(err);
-        alert("Error fetching gold prices. Try again later.");
-      }
-    }
-
-    function renderChart(labels, values) {
-      if (chart) chart.destroy();
-
-      chart = new Chart(ctx, {
+      const chart = new Chart(ctx, {
         type: 'line',
         data: {
-          labels,
+          labels: dates,
           datasets: [{
-            label: 'Total Gold Value (USD)',
-            data: values,
-            borderColor: '#c59d5f',
-            backgroundColor: 'rgba(197,157,95,0.2)',
+            label: `Preis für ${gramsInput.value}g (EUR)`,
+            data: eurPerGram.map(v => v * gramsInput.value),
+            borderColor: '#d4af37',
             borderWidth: 2,
-            pointRadius: 3,
-            fill: true,
-            tension: 0.2
+            pointRadius: 0,
+            fill: false
           }]
         },
         options: {
           responsive: true,
-          plugins: {
-            title: {
-              display: true,
-              text: 'Your Gold Value Over the Last 2 Years'
-            },
-            tooltip: {
-              callbacks: {
-                label: ctx => `$${ctx.parsed.y.toFixed(2)}`
-              }
-            }
-          },
+          interaction: { mode: 'index', intersect: false },
           scales: {
-            y: {
-              title: {
-                display: true,
-                text: 'USD'
-              },
-              beginAtZero: false
-            },
-            x: {
-              title: {
-                display: true,
-                text: 'Date'
-              }
-            }
+            x: { title: { display: true, text: 'Datum' }, ticks: { maxTicksLimit: 12 } },
+            y: { title: { display: true, text: 'EUR' } }
           }
         }
       });
+
+      gramsInput.addEventListener('input', () => {
+        const g = gramsInput.value;
+        chart.data.datasets[0].label = `Preis für ${g}g (EUR)`;
+        chart.data.datasets[0].data = eurPerGram.map(v => v * g);
+        chart.update();
+      });
     }
 
-    // Auto-load with default value
-    loadGoldData();
+    loadLBMAData().catch(err => {
+      console.error('Fehler beim Laden der LBMA-Daten:', err);
+      alert('Fehler beim Laden der LBMA-Daten. Bitte Seite neu laden.');
+    });
   </script>
 </body>
 </html>
